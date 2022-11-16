@@ -699,6 +699,11 @@
               <FileType>1</FileType>
               <FilePath>..\Tasks\Src\example_task.c</FilePath>
             </File>
+            <File>
+              <FileName>streering.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\_9.12 Introduction To RoboMaster\F103_tutorial-Dev\Tasks\Src\streering.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
