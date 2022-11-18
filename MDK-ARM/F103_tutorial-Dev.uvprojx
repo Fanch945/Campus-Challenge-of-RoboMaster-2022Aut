@@ -702,7 +702,7 @@
             <File>
               <FileName>streering.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\..\_9.12 Introduction To RoboMaster\F103_tutorial-Dev\Tasks\Src\streering.c</FilePath>
+              <FilePath>..\Tasks\Src\streering.c</FilePath>
             </File>
           </Files>
         </Group>
