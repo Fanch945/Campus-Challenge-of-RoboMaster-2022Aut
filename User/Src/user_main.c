@@ -32,7 +32,6 @@ void User_Init(void){
 	/* The first parameter can be any string you want */
 	/* The second parameter is the function name you want to run in the thread */
 	osThreadCreate("example",Example_task,NULL,osPriorityNormal,128);
-	osThreadCreate("streering",Streering_task,NULL,osPriorityNormal,128);
 	/* USER CODE BEGIN */
 	
 	/* USER CODE END */
