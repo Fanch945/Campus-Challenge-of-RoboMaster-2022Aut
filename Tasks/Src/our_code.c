@@ -1,0 +1,392 @@
+#include "example_task.h"
+#include "os.h"
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include "bsp_adc.h"
+#include "components.h"
+#include "stm32f1xx_hal_gpio.h"
+#include "controller.h"
+#include "pwm.h"
+#include "user_main.h"
+#include "power.h"
+/* USER CODE END Includes */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define left_triswitch_up 1
+#define left_triswitch_middle 3
+#define left_triswitch_down 2
+#define right_triswitch_up 1
+#define right_triswitch_middle 3
+#define right_triswitch_down 2
+#define y_axis_ratio 1.0f
+#define x_axis_ratio 1.0f
+#define servo_speed_ratio 0.0002f
+#define servo_reset_ratio 0.99f
+#define servo_init_ratio 0.99f
+#define automode_motor_const_dutyratio 0.9f
+#define error_ratio 0.0004f
+#define forward 1
+#define reverse -1
+#define colour_judge_threshold 700
+#define black 1
+#define white 0
+/* USER CODE END PD */
+
+/* Private variables ---------------------------------------------------------*/
+/* USER CODE BEGIN PV */
+float servo_dutyratio[5];
+float servo_reset_dutyratio[5];
+float servo_init_dutyratio[5];
+bool  reseted=0;
+bool  inited=0;
+int   adc_colour[6];
+bool  reach_stopline=0;
+bool  leave_stopline=0;
+bool  reach_identifier=0;
+bool  auto_function_finished=0;
+
+typedef struct{
+	float left_dutyratio;
+	float right_dutyratio;
+}   Motor;
+
+Motor motor;
+
+/* USER CODE END PV */
+
+/* Private functions declaration ---------------------------------------------*/
+/* USER CODE BEGIN PFD */
+void PWM_setfrequency(int frequency){      
+	for(int i=1;i<=4;i++){
+		PWM_SetFrequency(&pwm1[i],frequency);
+		PWM_SetFrequency(&pwm2[i],frequency);
+	}
+}
+
+void assign_servo_reset_and_init_dutyratio(){
+	servo_reset_dutyratio[1]=0.095f;
+	servo_reset_dutyratio[2]=0.025f;
+	servo_reset_dutyratio[3]=0.082f;
+	servo_reset_dutyratio[4]=0.075f;
+	
+	servo_init_dutyratio[1]=0.048f;
+	servo_init_dutyratio[2]=0.025f;
+	servo_init_dutyratio[3]=0.082f;
+	servo_init_dutyratio[4]=0.123f;
+}
+
+
+
+void servo_reset(){   //set all servo to the reset position
+  while(1){
+		bool reset_finished=1;
+
+		for(int i=1;i<=4;i++){
+			servo_dutyratio[i]=servo_dutyratio[i]*servo_reset_ratio+servo_reset_dutyratio[i]*(1-servo_reset_ratio);	
+			PWM_SetDutyRatio(&pwm1[i],servo_dutyratio[i]);
+		}
+		delay(25);
+		for(int i=1;i<=4;i++){
+			if(servo_dutyratio[i]-servo_reset_dutyratio[i]>0.001 || servo_dutyratio[i]-servo_reset_dutyratio[i]<-0.001){
+				reset_finished=0;
+				break;
+			}
+		}
+		if(reset_finished){
+			break;
+		}
+	}
+	for(int i=1;i<=4;i++){
+		PWM_SetDutyRatio(&pwm1[i],servo_reset_dutyratio[i]);
+	}
+}
+
+
+void servo_init(){   
+  while(1){
+		bool init_finished=1;
+		
+		for(int i=1;i<=4;i++){
+			servo_dutyratio[i]=servo_dutyratio[i]*servo_init_ratio+servo_init_dutyratio[i]*(1-servo_init_ratio);
+			PWM_SetDutyRatio(&pwm1[i],servo_dutyratio[i]);
+		}
+		delay(25);
+		for(int i=1;i<=4;i++){
+			if(servo_dutyratio[i]-servo_init_dutyratio[i]>0.001 || servo_dutyratio[i]-servo_init_dutyratio[i]<-0.001){
+				init_finished=0;
+				break;
+			}
+		}
+		if(init_finished){
+			break;
+		}
+	}
+	for(int i=1;i<=4;i++){
+		PWM_SetDutyRatio(&pwm1[i],servo_init_dutyratio[i]);
+	}
+}
+
+
+
+
+void check_servo_dutyratio(){       //make sure the servo_dutyratio won't exceed [0.025,0.125]
+	for(int i=1;i<=3;i++){
+		if(servo_dutyratio[i]>0.125f){
+			servo_dutyratio[i]=0.125f;
+		}
+		if(servo_dutyratio[i]<0.025f){
+			servo_dutyratio[i]=0.025f;
+		}
+	}
+	if(servo_dutyratio[4]>0.123f){
+			servo_dutyratio[4]=0.123f;
+		}
+	if(servo_dutyratio[4]<0.027f){
+			servo_dutyratio[4]=0.027f;
+		}
+}
+
+void check_motor_dutyratio(){
+	if(motor.left_dutyratio>1){
+		motor.left_dutyratio=1;
+	}
+	if(motor.left_dutyratio<0){
+		motor.left_dutyratio=0;
+	}
+	if(motor.right_dutyratio>1){
+		motor.right_dutyratio=1;
+	}
+	if(motor.right_dutyratio<0){
+		motor.right_dutyratio=0;
+	}
+}
+
+
+
+void PWM_control_motor(int left_direction,float left_dutyratio,int right_direction,float right_dutyratio){
+	if(left_direction==forward){
+		check_motor_dutyratio();
+		PWM_SetDutyRatio(&pwm2[1],left_dutyratio);
+	  PWM_SetDutyRatio(&pwm2[2],0);
+	}
+	if(left_direction==reverse){
+		check_motor_dutyratio();
+		PWM_SetDutyRatio(&pwm2[1],0);
+	  PWM_SetDutyRatio(&pwm2[2],left_dutyratio);
+	}
+	if(right_direction==forward){
+		check_motor_dutyratio();
+		PWM_SetDutyRatio(&pwm2[3],right_dutyratio);
+	  PWM_SetDutyRatio(&pwm2[4],0);
+	}
+	if(right_direction==reverse){
+		check_motor_dutyratio();
+		PWM_SetDutyRatio(&pwm2[3],0);
+	  PWM_SetDutyRatio(&pwm2[4],right_dutyratio);
+	}
+}
+
+
+void motor_stop(){
+	for(int i=1;i<=4;i++){
+	  PWM_SetDutyRatio(&pwm2[i],0);
+	}
+}
+
+
+void judge_adc_colour(){
+	for(int i=0;i<=5;i++){
+		if(adc_data[i].data<=colour_judge_threshold){
+			adc_colour[i]=black;
+		}
+		else{
+			adc_colour[i]=white;
+		}
+	}
+}
+
+
+
+void follow_line(){
+	float adc_error[6];
+	adc_error[3]=adc_data[3].data-adc_data[3].last_data;//left adc
+	adc_error[5]=adc_data[5].data-adc_data[5].last_data;//right adc
+	
+	motor.left_dutyratio=automode_motor_const_dutyratio+adc_error[3]*error_ratio;
+	motor.right_dutyratio=automode_motor_const_dutyratio+adc_error[5]*error_ratio;
+	
+	check_motor_dutyratio();
+	PWM_control_motor(forward,motor.left_dutyratio,forward,motor.right_dutyratio);
+	
+	
+	
+}
+
+void reset_car_state(){
+	reach_stopline=0;
+	leave_stopline=0;
+	reach_identifier=0;
+}
+
+
+
+/* USER CODE END PFD */
+
+/**
+* @breif 		main task of example_task
+* @param 		args: avoid some funtions put parameters to this function
+* @return		none
+* @note
+*/
+
+void Example_task(void * arg) {
+	PWM_setfrequency(50);
+	assign_servo_reset_and_init_dutyratio();
+	motor_stop();
+	
+	for(int i=1;i<=4;i++){
+		servo_dutyratio[i]=servo_reset_dutyratio[i];
+	}
+	servo_reset();
+	reseted=1; 
+
+	while(1) {
+		/* You can write your own code here */
+		/* USER CODE BEGIN */
+		if(control.online && !inited){
+			servo_init();
+			inited=1;
+			reseted=0;
+		}
+		if(!control.online && !reseted){
+			motor_stop();
+			servo_reset();
+			reseted=1;
+			inited=0;
+		}
+		
+		if(control.triSwitch[0]!=left_triswitch_up){
+			auto_function_finished=0;
+			reset_car_state();
+		}
+		
+		switch(control.triSwitch[0]){
+			case left_triswitch_up: 				//auto 
+			  judge_adc_colour();
+			  
+			  if(!auto_function_finished){
+					if(adc_colour[0]==black && adc_colour[1]==black && adc_colour[2]==black){
+					  reach_stopline =1;
+				  }		
+				  if(!reach_stopline){
+					  follow_line();
+				  }
+				  if(reach_stopline){
+					  if(adc_colour[0]==white && adc_colour[1]==white && adc_colour[2]==white){
+						  leave_stopline=1;
+					  }
+					  if(!leave_stopline){
+						  follow_line();
+					  }
+					  if(leave_stopline){
+					  	if(adc_colour[0]==black || adc_colour[1]==black || adc_colour[2]==black){
+						  	reach_identifier=1;
+					  	}
+					  	if(!reach_identifier){
+					  		follow_line();
+					  	}
+						  if(reach_identifier){
+							  motor_stop();
+							  auto_function_finished=1;
+						  }
+					  }
+				  }
+				}
+			  
+				
+				
+				
+			break;
+			
+			case left_triswitch_middle:				//remote control
+				switch(control.triSwitch[1]){
+					case right_triswitch_up:    //move
+						
+						if(control.channel[3]>0){
+							motor.left_dutyratio=control.channel[3]*y_axis_ratio+control.channel[0]*x_axis_ratio;
+							motor.right_dutyratio=control.channel[3]*y_axis_ratio-control.channel[0]*x_axis_ratio;
+							PWM_control_motor(forward,motor.left_dutyratio,forward,motor.right_dutyratio);
+						}
+						else if(control.channel[3]<0){
+							motor.left_dutyratio=-control.channel[3]*y_axis_ratio-control.channel[0]*x_axis_ratio;
+							motor.right_dutyratio=-control.channel[3]*y_axis_ratio+control.channel[0]*x_axis_ratio;
+							PWM_control_motor(reverse,motor.left_dutyratio,reverse,motor.right_dutyratio);
+						}
+						else{
+							if(control.channel[0]>0){
+								motor.left_dutyratio=control.channel[0];
+								motor.right_dutyratio=control.channel[0];
+								PWM_control_motor(forward,motor.left_dutyratio,reverse,motor.right_dutyratio);
+							}
+							else if(control.channel[0]<0){
+								motor.left_dutyratio=-control.channel[0];
+								motor.right_dutyratio=-control.channel[0];
+								PWM_control_motor(reverse,motor.left_dutyratio,forward,motor.right_dutyratio);
+							}
+							else{
+								motor_stop();
+							}
+						}
+						
+						
+					break;
+					
+					case right_triswitch_middle://arm
+						servo_dutyratio[1]=servo_dutyratio[1]+control.channel[3]*servo_speed_ratio;
+					  servo_dutyratio[2]=servo_dutyratio[2]+control.channel[1]*servo_speed_ratio;
+						check_servo_dutyratio();
+					  PWM_SetDutyRatio(&pwm1[1],servo_dutyratio[1]);
+					  PWM_SetDutyRatio(&pwm1[2],servo_dutyratio[2]);
+					break;
+					
+					case right_triswitch_down:  //arm
+						servo_dutyratio[3]=servo_dutyratio[3]-control.channel[2]*servo_speed_ratio;
+					  servo_dutyratio[4]=servo_dutyratio[4]+control.channel[1]*servo_speed_ratio;
+						check_servo_dutyratio();
+					  PWM_SetDutyRatio(&pwm1[3],servo_dutyratio[3]);
+					  PWM_SetDutyRatio(&pwm1[4],servo_dutyratio[4]);
+					break;
+				}
+			break;
+				
+			case left_triswitch_down:            //air pump
+				switch((control.triSwitch[1]){
+					case right_triswitch_up:
+						power_on();
+						break;
+					case right_triswitch_middle:
+						Power_Init();
+						break;
+					case right_triswitch_down:
+						power_off();
+						break;
+				}
+			break;
+		}
+		
+		
+		
+		
+		//HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_8);
+		/* USER CODE END */
+		delay(10);
+
+	}
+}
+
+/* Private functions ---------------------------------------------------------*/
+/*	Remember to declare your functions at the beginning of this file and in the .h file */
+/* USER CODE BEGIN PF */
+
+/* USER CODE END PF */
