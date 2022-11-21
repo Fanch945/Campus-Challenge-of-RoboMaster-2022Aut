@@ -62,6 +62,7 @@ typedef struct{
 	float duty_ratio[5];
 	float resetState_dutyratio[5];
 	float initState_dutyratio[5];  //the array[0] won't be used
+	float target_dutyratio[5];  //only used in autocatch #Fanch
 } Servo;
 //the variables of servo
 
@@ -304,10 +305,52 @@ void reset_car_state(){
 }
 //this function is to reset the three state of the car
 
+//Fanch's auto function begin *****
+void auto_step_forward(int stepping_time_ms){
+	check_motor_dutyratio();
+	PWM_SetDutyRatio(&pwm2[2],0);
+	PWM_SetDutyRatio(&pwm2[4],0);
+	PWM_SetDutyRatio(&pwm2[1],0.5);
+	PWM_SetDutyRatio(&pwm2[3],0.5);
+	delay(stepping_time_ms);
+	motor_stop();
+}
+void auto_step_backward(int stepping_time_ms){
+	check_motor_dutyratio();
+	PWM_SetDutyRatio(&pwm2[1],0);
+	PWM_SetDutyRatio(&pwm2[3],0);
+	PWM_SetDutyRatio(&pwm2[2],0.5);
+	PWM_SetDutyRatio(&pwm2[4],0.5);
+	delay(stepping_time_ms);
+	motor_stop();
+}
+void auto_horizonally_catch(int waiting_time,int mv_for_time,int mv_ba_time){
+	delay(waiting_time);  //remotely adjust the holder  /////*****/////
+	power_on();
+	auto_step_forward(mv_for_time);
+	delay(500);
+	auto_step_backward(mv_ba_time);
+	delay(500);
+}
+void auto_horizonally_exchange(int waiting_time,int mv_for_time,int mv_ba_time){
+	delay(waiting_time);  //remotely adjust the holder  /////*****/////
+	auto_step_forward(mv_for_time);
+	delay(500);
+	power_off();
+	auto_step_forward(1000);
+	auto_step_backward(mv_ba_time);
+	delay(500);
+}
+int identifier_cal(int colour[]){
+	int i_c = 0;
+	i_c = colour[0]*4+colour[1]*2+colour[2];
+	return i_c;
+}
+//Fanch's auto function finished *****
 /* USER CODE END PFD */
 
 /**
-* @breif 		main task of example_task
+* @brief 		main task of example_task
 * @param 		args: avoid some funtions put parameters to this function
 * @return		none
 * @note
@@ -382,6 +425,110 @@ void Example_task(void * arg) {
 					  	}
 						  if(reach_identifier){
 							  motor_stop();
+								//******
+								int case_identifier = identifier_cal(adc_colour);
+								int target_finished;
+								switch(case_identifier){
+									//??
+									case(0):
+										delay(2000);
+										break;
+									case(7):
+										break;
+									//??
+									case(1):  //No.1 high horizon
+										PWM_SetDutyRatio(&pwm1[4],0.100);  //top SG pi+B  /////*****/////
+										PWM_SetDutyRatio(&pwm1[1],0.048);  //left MG ortha to ground
+										PWM_SetDutyRatio(&pwm1[2],0.025);  //right MG down about 30drg  /////*****/////
+										auto_horizonally_catch(1500,1500,2000);  /////*****/////
+										break;
+									case(2):  //No.2 low horizon
+										PWM_SetDutyRatio(&pwm1[4],0.125);  //top SG pi+B  /////*****/////
+										PWM_SetDutyRatio(&pwm1[1],0.025);  //left MG horizon forward
+										PWM_SetDutyRatio(&pwm1[2],0.075);  //right MG up about 30drg  /////*****/////
+										auto_horizonally_catch(1500,1500,2000);  /////*****/////
+										break;
+									case(3):  //No.3&4 center
+									case(4):
+										motor_stop();
+										delay(1500);  //remotely adjust the holder  
+										PWM_SetDutyRatio(&pwm1[4],0.030);  //top SG pi/2+B  /////*****/////
+										PWM_SetDutyRatio(&pwm1[1],0.048);  //left MG ortha to ground ++  /////*****/////
+										PWM_SetDutyRatio(&pwm1[2],0.025);  //right MG down about 30drg  /////*****/////
+										auto_step_forward(1500);
+										motor_stop();
+										delay(500); 
+										power_on();
+									///
+										target_finished = 1;
+										servo.target_dutyratio[2] = 0.075;
+										servo.target_dutyratio[4] = 0.080;
+										while(target_finished == 1){
+											servo.duty_ratio[4]=servo.duty_ratio[4]*servo_reset_ratio+servo.target_dutyratio[4]*(1-servo_reset_ratio);
+											servo.duty_ratio[2]=servo.duty_ratio[2]*servo_reset_ratio+servo.target_dutyratio[2]*(1-servo_reset_ratio);
+											PWM_SetDutyRatio(&pwm1[4], servo.duty_ratio[4]);
+											PWM_SetDutyRatio(&pwm1[2], servo.duty_ratio[2]);
+												//through weighted average,let servo's duty cycle approach the target dutyratio
+											delay(25);
+											if((fabs(servo.duty_ratio[2]-servo.target_dutyratio[2])<proper_gap) && (fabs(servo.duty_ratio[4]-servo.target_dutyratio[4])<proper_gap)){
+												target_finished=0; //only every interface of the servo satisfy the condition can avoid obtaining the bool 0
+												break;
+											}
+										}
+									///
+										target_finished=1;
+										servo.target_dutyratio[2] = 0.025;
+										servo.target_dutyratio[4] = 0.030;
+										while(target_finished == 1){
+											servo.duty_ratio[4]=servo.duty_ratio[4]*servo_reset_ratio+servo.target_dutyratio[4]*(1-servo_reset_ratio);
+											servo.duty_ratio[2]=servo.duty_ratio[2]*servo_reset_ratio+servo.target_dutyratio[2]*(1-servo_reset_ratio);
+											PWM_SetDutyRatio(&pwm1[4], servo.duty_ratio[4]);
+											PWM_SetDutyRatio(&pwm1[2], servo.duty_ratio[2]);
+												//through weighted average,let servo's duty cycle approach the target dutyratio
+											delay(25);
+											if((fabs(servo.duty_ratio[2]-servo.target_dutyratio[2])<proper_gap) && (fabs(servo.duty_ratio[4]-servo.target_dutyratio[4])<proper_gap)){
+												target_finished=0; //only every interface of the servo satisfy the condition can avoid obtaining the bool 0
+												break;
+											}
+										}
+										break;
+									case(5):  //No.Ground
+										PWM_SetDutyRatio(&pwm1[4],0.075);  //top SG pi/2+B  /////*****/////
+										PWM_SetDutyRatio(&pwm1[1],0.048);  //left MG ortha to ground
+										PWM_SetDutyRatio(&pwm1[2],0.025);  //right MG down about 30drg  /////*****/////
+										auto_step_forward(500);
+										delay(1500);
+										power_on();
+										//
+										target_finished=1;
+										servo.target_dutyratio[2] = 0.075;
+										servo.target_dutyratio[4] = 0.075;
+										while(target_finished == 1){
+											servo.duty_ratio[4]=servo.duty_ratio[4]*servo_reset_ratio+servo.target_dutyratio[4]*(1-servo_reset_ratio);
+											servo.duty_ratio[2]=servo.duty_ratio[2]*servo_reset_ratio+servo.target_dutyratio[2]*(1-servo_reset_ratio);
+											PWM_SetDutyRatio(&pwm1[4], servo.duty_ratio[4]);
+											PWM_SetDutyRatio(&pwm1[2], servo.duty_ratio[2]);
+												//through weighted average,let servo's duty cycle approach the target dutyratio
+											delay(25);
+											if((fabs(servo.duty_ratio[2]-servo.target_dutyratio[2])<proper_gap) && (fabs(servo.duty_ratio[4]-servo.target_dutyratio[4])<proper_gap)){
+												target_finished=0; //only every interface of the servo satisfy the condition can avoid obtaining the bool 0
+												break;
+											}
+										}
+										PWM_SetDutyRatio(&pwm1[1],0.025);
+										delay(500);
+										break;
+									case(6):  //bank
+										PWM_SetDutyRatio(&pwm1[4],0.100);  //top SG pi+B  /////*****/////
+										PWM_SetDutyRatio(&pwm1[1],0.048);  //left MG ortha to ground
+										PWM_SetDutyRatio(&pwm1[2],0.025);  //right MG down about 30drg  /////*****/////
+										auto_horizonally_exchange(1500,1500,2000);
+										break;
+									default:
+										break;
+								}
+								//******
+								
 							  auto_function_finished=1;
 								// auto mode finished, convert to other mode 
 						  }
