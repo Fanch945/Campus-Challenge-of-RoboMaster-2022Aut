@@ -259,6 +259,7 @@ void Example_task(void * arg) {
 			inited=1;
 			reseted=0;
 		}
+		
 		if(!control.online && !reseted){
 			motor_stop();
 			servo_reset();

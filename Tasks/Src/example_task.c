@@ -9,14 +9,18 @@
 #include "pwm.h"
 #include "power.h"
 #include "stm32f1xx_hal_gpio.h"
+#include "user_main.h"
 /* USER CODE END Includes */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define frequency 50
-#define proper_gap 0.01f
+#define proper_gap 0.0025f
 #define servo_reset_ratio 0.99f
 #define servo_init_ratio 0.99f
+#define vertical 1
+#define horizontal 0
+#define vertical_sum 0.177
+#define horizontal_sum 0.127
 // above is PWM part
 
 #define left_triswitch_up 1
@@ -30,13 +34,14 @@
 #define servo_speed_ratio 0.0002f  
 //above is remote controller part
 
-#define automode_motor_dutyratio_standard 0.9f 
-#define error_ratio 0.0004f
+#define automode_motor_dutyratio_standard 0.5f 
+#define error_ratio 0.002f
 #define forward 1
 #define reverse -1
-#define colour_judge_threshold 700  //the dividing point between white and black
+#define colour_judge_threshold 1000  //the dividing point between white and black
 #define black 1
 #define white 0
+
 // above is auto part 
 
 /* USER CODE END PD */
@@ -96,6 +101,7 @@ case3:left_switch_dowm---air pump mode
 	pwm1[1]---servo 1
 	pwm1[2]---servo 2
 	pwm1[3]---servo 3
+	
 	pwm1[4]---servo 4
 	pwm2[1]+[2]---left motor
 	pwm2[3]+[4]---right motor
@@ -105,7 +111,7 @@ case3:left_switch_dowm---air pump mode
 
 void reset_servo_positionValue(){   
 	servo.resetState_dutyratio[1]=0.095f;/** *@note waiting to be revised  */
-	servo.resetState_dutyratio[2]=0.025f;/** *@note waiting to be revised  */
+	servo.resetState_dutyratio[2]=0.058f;/** *@note waiting to be revised  */
 	servo.resetState_dutyratio[3]=0.082f;
 	servo.resetState_dutyratio[4]=0.075f;
 }
@@ -114,14 +120,14 @@ void reset_servo_positionValue(){
 
 void initialize_servo_positionValue(){ 
 	servo.initState_dutyratio[1]=0.048f;/** *@note waiting to be revised  */
-	servo.initState_dutyratio[2]=0.025f;/** *@note waiting to be revised  */
+	servo.initState_dutyratio[2]=0.054f;/** *@note waiting to be revised  */
 	servo.initState_dutyratio[3]=0.082f;
 	servo.initState_dutyratio[4]=0.123f;
 }
 // this function is to let the servo 1-4 to get to the init position(easier to carry out the following tasks) during the match 
 
 
-void set_pwm_frequency(){
+void set_pwm_frequency(int frequency){
 	for(int i=1;i<=4;i++){
 		PWM_SetFrequency(&pwm1[i], frequency);
 		PWM_SetFrequency(&pwm2[i], frequency);
@@ -129,6 +135,26 @@ void set_pwm_frequency(){
 }
 
 //this function is to set the frequency for 8 interfaces(4 for pwm1 + 4 for pwm2) 
+
+void check_servo_dutyratio(){      
+	for(int i=1;i<=3;i++){
+		if(servo.duty_ratio[i]>0.125f){
+			servo.duty_ratio[i]=0.125f;
+		}
+		if(servo.duty_ratio[i]<0.025f){
+			servo.duty_ratio[i]=0.025f;
+		}
+	}
+	if(servo.duty_ratio[4]>0.123f){
+			servo.duty_ratio[4]=0.123f;
+		}
+	if(servo.duty_ratio[4]<0.027f){
+			servo.duty_ratio[4]=0.027f;
+		}
+}
+/*this function is to make sure the servo.dutyratio 1-3 won't exceed [0.025,0.125]; 
+Particularly, the servo.dutyratio 4 won't exceed [0.027 , 0.123] since servo 4 we use SG90 */
+
 
 void reset_servo(){
 	while(1){
@@ -140,7 +166,7 @@ void reset_servo(){
 		}
 		delay(25);
 		for(int k=1;k<=4;k++){
-			if(fabs(servo.duty_ratio[k]-servo.resetState_dutyratio[k])<proper_gap){
+			if(fabs(servo.duty_ratio[k]-servo.resetState_dutyratio[k])>proper_gap){
 				reset_finished=0; //only every interface of the servo satisfy the condition can avoid obtaining the bool 0
 				break;
 			}
@@ -167,7 +193,7 @@ void initialize_servo(){
 		}
 		delay(25);
 		for(int k=1;k<=4;k++){
-			if(fabs(servo.duty_ratio[k]-servo.initState_dutyratio[k])<proper_gap){
+			if(fabs(servo.duty_ratio[k]-servo.initState_dutyratio[k])>proper_gap){
 				initialize_finished=0; //only every interface of the servo satisfy the condition can avoid obtaining the bool 0
 				break;
 			}
@@ -183,24 +209,14 @@ void initialize_servo(){
 }
 //this function is used to initialize the servo in a mild way
 
-void check_servo_duty_ratio(){      
-	for(int i=1;i<=3;i++){
-		if(servo.duty_ratio[i]>0.125f){
-			servo.duty_ratio[i]=0.125f;
+void servo4_fixed(int shift_mode){
+		if(shift_mode==vertical){
+			servo.duty_ratio[4]=vertical_sum-servo.duty_ratio[1];
+		}	
+		if(shift_mode==horizontal){
+			servo.duty_ratio[4]=horizontal_sum-servo.duty_ratio[1];
 		}
-		if(servo.duty_ratio[i]<0.025f){
-			servo.duty_ratio[i]=0.025f;
-		}
-	}
-	if(servo.duty_ratio[4]>0.123f){
-			servo.duty_ratio[4]=0.123f;
-		}
-	if(servo.duty_ratio[4]<0.027f){
-			servo.duty_ratio[4]=0.027f;
-		}
-}
-/*this function is to make sure the servo.dutyratio 1-3 won't exceed [0.025,0.125]; 
-Particularly, the servo.dutyratio 4 won't exceed [0.027 , 0.123] since servo 4 we use SG90 */
+}	
 
 void check_motor_dutyratio(){
 	if(motor.left_dutyratio>1){
@@ -300,22 +316,21 @@ void reset_car_state(){
 void Example_task(void * arg) {
 	/* You can write your own code here */
 	/* USER CODE BEGIN */
-	set_pwm_frequency();
+	set_pwm_frequency(50);
 	reset_servo_positionValue();
+	initialize_servo_positionValue();
 	motor_stop();
+	
 	/* USER CODE END */
+	for(int i=1;i<=4;i++) {
+		servo.duty_ratio[i]=servo.resetState_dutyratio[i];
+	}
+	reset_servo();
+	reseted=1;
 	
 	while(1) {
 		/* You can write your own code here */
 		/* USER CODE BEGIN */
-		if(!control.online && !reseted){
-			motor_stop();
-			reset_servo();
-			reseted=1;
-			inited=0;
-		}
-		//when the controller is offline,we let the arm convert to reset state
-		
 		if(control.online && !inited){
 			initialize_servo();
 			inited=1;
@@ -323,6 +338,13 @@ void Example_task(void * arg) {
 		}
 		//when the controll is online,we let the arm convert to init state 
 		
+		if(!control.online && !reseted){
+			motor_stop();
+			reset_servo();
+			reseted=1;
+			inited=0;
+		}
+		//when the controller is offline,we let the arm convert to reset state
 		
 		if(control.triSwitch[0]!=left_triswitch_up){
 			auto_function_finished=0;
@@ -413,16 +435,24 @@ void Example_task(void * arg) {
 					case right_triswitch_middle: //arm controlled by servo 1/2
 						servo.duty_ratio[1]=servo.duty_ratio[1]+control.channel[3]*servo_speed_ratio;
 					  servo.duty_ratio[2]=servo.duty_ratio[2]+control.channel[1]*servo_speed_ratio;
+						servo.duty_ratio[3]=servo.duty_ratio[3]-control.channel[2]*servo_speed_ratio;
 						//correspond the x/y axis value of controller with servo's dutyratio
-						check_servo_duty_ratio();
+						servo4_fixed(horizontal);
+						check_servo_dutyratio();
 					  PWM_SetDutyRatio(&pwm1[1],servo.duty_ratio[1]);
 					  PWM_SetDutyRatio(&pwm1[2],servo.duty_ratio[2]);
+						PWM_SetDutyRatio(&pwm1[3],servo.duty_ratio[3]);
+					  PWM_SetDutyRatio(&pwm1[4],servo.duty_ratio[4]);
 					break;
 					
 					case right_triswitch_down:  //arm controlled by servo 3/4
+						servo.duty_ratio[1]=servo.duty_ratio[1]+control.channel[3]*servo_speed_ratio;
+					  servo.duty_ratio[2]=servo.duty_ratio[2]+control.channel[1]*servo_speed_ratio;
 						servo.duty_ratio[3]=servo.duty_ratio[3]-control.channel[2]*servo_speed_ratio;
-					  servo.duty_ratio[4]=servo.duty_ratio[4]+control.channel[1]*servo_speed_ratio;
-						check_servo_duty_ratio();
+					  servo4_fixed(vertical);
+						check_servo_dutyratio();
+						PWM_SetDutyRatio(&pwm1[1],servo.duty_ratio[1]);
+					  PWM_SetDutyRatio(&pwm1[2],servo.duty_ratio[2]);
 					  PWM_SetDutyRatio(&pwm1[3],servo.duty_ratio[3]);
 					  PWM_SetDutyRatio(&pwm1[4],servo.duty_ratio[4]);
 					break;
@@ -430,7 +460,7 @@ void Example_task(void * arg) {
 			break;
 				
 			case left_triswitch_down:            //air pump mode
-				switch((control.triSwitch[1])){
+				switch(control.triSwitch[1]){
 					case right_triswitch_up:
 						power_on();
 						break;
