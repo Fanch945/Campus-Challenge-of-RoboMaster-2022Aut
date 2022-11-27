@@ -48,7 +48,7 @@ bool  leave_stopline=0;
 bool  reach_identifier=0;
 bool  auto_function_finished=0;
 bool  init_finished=1;
-int   colour_judge_threshold[6] = {3000,3000,3000,3000,0,3000};
+int   colour_judge_threshold[6] = {2430,2300,2400,1500,0,1500};
 float sum=0;
 float last_dutyratio;
 float target;
@@ -83,7 +83,7 @@ void assign_servo_reset_and_init_dutyratio(){
 	servo_reset_dutyratio[1]=0.101f;
 	servo_reset_dutyratio[2]=0.052f;
 	servo_reset_dutyratio[3]=0.084f;
-	servo_reset_dutyratio[4]=0.065f;
+	servo_reset_dutyratio[4]=0.085f;
 	
 	servo_init_dutyratio[1]=0.067f;
 	servo_init_dutyratio[2]=0.054f;
@@ -113,10 +113,10 @@ void check_servo_dutyratio(){       //make sure the servo_dutyratio won't exceed
 void set_servo_4_follow_mode(int mode){
 	
 	if(mode==H){
-		servo_dutyratio[4]=0.052-(servo_dutyratio[2]-servo_reset_dutyratio[2]);
+		servo_dutyratio[4]=0.052+(servo_dutyratio[2]-servo_reset_dutyratio[2]);
 	}
 	if(mode==S){
-		servo_dutyratio[4]=servo_init_dutyratio[4]-(servo_dutyratio[2]-servo_init_dutyratio[2]);
+		servo_dutyratio[4]=servo_init_dutyratio[4]+(servo_dutyratio[2]-servo_init_dutyratio[2]);
 	}
 	sum=sum+control.channel[0]*servo_remote_control_speed_ratio;
 	servo_dutyratio[4]=servo_dutyratio[4]+sum;
@@ -267,9 +267,9 @@ void follow_line(){
 }
 
 void reset_car_state(){
-	reach_stopline=1;  //000
-	leave_stopline=1;
-	reach_identifier=1;
+	reach_stopline=0;  //000
+	leave_stopline=0;
+	reach_identifier=0;
 }
 
 
@@ -338,7 +338,7 @@ void auto_exchange_preparation(){
   int target_finished = 1;
 	servo.target_dutyratio[1] = 0.066;
 	servo.target_dutyratio[2] = 0.056;
-	servo.target_dutyratio[4] = 0.048;
+	servo.target_dutyratio[4] = 0.115;
 	while(target_finished == 1){
 		servo.duty_ratio[1]=servo.duty_ratio[1]*auto_servo_adjust_ratio+servo.target_dutyratio[1]*(1-auto_servo_adjust_ratio);
 		servo.duty_ratio[2]=servo.duty_ratio[2]*auto_servo_adjust_ratio+servo.target_dutyratio[2]*(1-auto_servo_adjust_ratio);
@@ -356,7 +356,14 @@ void auto_exchange_preparation(){
 }
 int identifier_cal(int colour[]){
 	int i_c = 0;
-	i_c = colour[0]*4+colour[1]*2+colour[2];
+	int c[3];
+	for (int i=0;i<10;i++){
+		c[0]=fmax(c[0],colour[0]);
+		c[1]=fmax(c[1],colour[1]);
+		c[2]=fmax(c[2],colour[2]);
+		delay(10);
+	}
+	i_c = c[0]*4+c[1]*2+c[2];
 	return i_c;
 }
 //Fanch's auto function finished *****
@@ -438,7 +445,7 @@ void Example_task(void * arg) {
 						  if(reach_identifier){
 							  motor_stop();
 								//******
-								int case_identifier = 5;// identifier_cal(adc_colour);
+								int case_identifier = identifier_cal(adc_colour);
 								int target_finished;
 								for (int i = 0;i<=4;i++){
 									servo.duty_ratio[i] = servo_dutyratio[i];
@@ -470,12 +477,16 @@ void Example_task(void * arg) {
 												break;
 											}
 										auto_step_forward(500);
+										delay(1000);
 										power_on();
+										delay(1000);
 										auto_step_backward(1000);
+										delay(1000);
 										auto_exchange_preparation();
 										break;
 									case(2):  //No.2 low horizon
 										auto_step_backward(1500);  /////*****/////
+										delay(1000);
 										PWM_SetDutyRatio(&pwm1[1],0.066);  //left MG horizon forward
 										target_finished = 1;
 										servo.target_dutyratio[1] = 0.03;
@@ -491,12 +502,16 @@ void Example_task(void * arg) {
 											//through weighted average,let servo's duty cycle approach the target dutyratio												
 											delay(25);
 											if(fabs(servo.duty_ratio[2]-servo.target_dutyratio[2])<auto_servo_error_threshold)
-												target_finished=0; //only every interface of the servo satisfy the condition can avoid obtaining the bool 0
+												target_finished=0;
 												break;
 											}
-										auto_step_forward(500);
+										delay(1000);
+										auto_step_forward(1500);
+										delay(1000);
 										power_on();
+										delay(1000);
 										auto_step_backward(1000);
+										delay(1000);
 										auto_exchange_preparation();
 										break;
 									case(3):  //No.3&4 center
@@ -521,7 +536,9 @@ void Example_task(void * arg) {
 												break;
 											}
 										}
+										delay(1000);
 										power_on();
+										delay(1000);
 									///
 										target_finished=1;
 										servo.target_dutyratio[2] = 0.035;
@@ -535,8 +552,11 @@ void Example_task(void * arg) {
 												break;
 											}
 										}
+										delay(1000);
 										auto_step_backward(1000);
+										delay(1000);
 										motor_stop();
+										delay(1000);
 										auto_exchange_preparation();
 										break;
 									case(5):  //No.Ground
@@ -572,7 +592,9 @@ void Example_task(void * arg) {
 										break;
 								}
 								//******
-								
+								for (int i = 0;i<=4;i++){
+									servo_dutyratio[i] = servo.duty_ratio[i];
+								}
 								
 							  auto_function_finished=1;
 						  }
