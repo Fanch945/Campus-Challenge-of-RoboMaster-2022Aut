@@ -19,8 +19,8 @@
 #define right_triswitch_up 1
 #define right_triswitch_middle 3
 #define right_triswitch_down 2
-#define y_axis_ratio 1.0f
-#define x_axis_ratio 1.0f
+#define y_axis_ratio 1.0f   //getting forward and backward ratio
+#define x_axis_ratio 1.0f   //turning left and right ratio
 #define servo_remote_control_speed_ratio 0.0002f
 #define auto_servo_adjust_ratio 0.98f
 #define automode_motor_const_dutyratio 0.5f
@@ -38,8 +38,8 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 float servo_dutyratio[5];
-float servo_reset_dutyratio[5];
-float servo_init_dutyratio[5];
+float servo_reset_dutyratio[5];  
+float servo_init_dutyratio[5];  //the array[0] won't be used
 bool  reseted=0;
 bool  inited=0;
 int   adc_colour[6];
@@ -48,14 +48,14 @@ bool  leave_stopline=0;
 bool  reach_identifier=0;
 bool  auto_function_finished=0;
 bool  init_finished=1;
-int   colour_judge_threshold[6] = {2430,2300,2400,1500,0,1500};
+int   colour_judge_threshold[6]={2430,2300,2430,1500,0,1500};   //the dividing point between white and black
 float sum=0;
 float last_dutyratio;
 float target;
 	
 typedef struct{
 	float left_dutyratio;
-	float right_dutyratio;
+	float right_dutyratio;  
 }   Motor;
 
 Motor motor;
@@ -68,31 +68,66 @@ typedef struct{
 } Servo;
 Servo servo; // F
 
+
 /* USER CODE END PV */
 
 /* Private functions declaration ---------------------------------------------*/
 /* USER CODE BEGIN PFD */
+
+/*Some important Statements and Notes:
+1.Below we call the arm's beginning state reset; the arm's game state init 
+2.The corresponding relationship between the number of the servo and its position on the trolley: 
+	servo1-left ;
+	servo2-right ;
+	servo3-bottom ;
+	servo4-top;
+3.different functions of the controller:
+	(control.triSwitch[0] means the left triswitch
+	 control.triSwitch[1] means the right triswitch)
+case1:left_switch_up---automatic mode(be used for automatically inspecting line and identifier)
+case2:left_switch_middle---remote mode(be used for completing all tasks.If possible,some functions can convert to auto)
+			subcase1:right_switch_up--arm corresponding to servo 1,2 and 3 and servo 4 horizontally
+			subcase2:right_switch_middle---car movement(left stick is responsible for getting forward and backward;right stick is responsible for turning left and right)
+			subcase3:right_switch_down--arm corresponding to servo 1,2 and 3 and servo 4 vertically
+case3:left_switch_dowm---air pump mode
+			subcase1:right_switch_up---turn on the air pump
+			subcase2:right_switch_middle---initialize the air pump	
+			subcase3:right_switch_down---turn off the air pump
+4.some corresponding relationship:
+	pwm1[1]---servo 1
+	pwm1[2]---servo 2
+	pwm1[3]---servo 3
+	pwm1[4]---servo 4
+	pwm2[1]+[2]---left motor
+	pwm2[3]+[4]---right motor
+	adc[0]/[1]/[2]---at the front of the car(used for recognizing three identifiers)
+	adc[3]/[5]---at the middle bottom of the car(used to adjust the deviation generated during the line tracking process, and automatically track the line forward)
+*/
+
+
 void PWM_setfrequency(int frequency){      
 	for(int i=1;i<=4;i++){
 		PWM_SetFrequency(&pwm1[i],frequency);
 		PWM_SetFrequency(&pwm2[i],frequency);
 	}
 }
+//this function is to set the frequency for 8 interfaces(4 for pwm1 + 4 for pwm2) 
 
 void assign_servo_reset_and_init_dutyratio(){
 	servo_reset_dutyratio[1]=0.101f;
 	servo_reset_dutyratio[2]=0.052f;
 	servo_reset_dutyratio[3]=0.084f;
-	servo_reset_dutyratio[4]=0.085f;
+	servo_reset_dutyratio[4]=0.065f;
 	
 	servo_init_dutyratio[1]=0.067f;
 	servo_init_dutyratio[2]=0.054f;
 	servo_init_dutyratio[3]=0.082f;
 	servo_init_dutyratio[4]=0.101f;
 }
+//this function is to let the servo 1-4 to get to the reset position(folded to satisfy the rule) when the match begins and to get to the init position(easier to carry out the following tasks) during the match 
 
 void check_servo_dutyratio(){       //make sure the servo_dutyratio won't exceed [0.025,0.125]
-	for(int i=1;i<=3;i++){
+	for(int i=1;i<=4;i++){
 		if(servo_dutyratio[i]>0.125f){
 			servo_dutyratio[i]=0.125f;
 		}
@@ -100,14 +135,7 @@ void check_servo_dutyratio(){       //make sure the servo_dutyratio won't exceed
 			servo_dutyratio[i]=0.025f;
 		}
 	}
-	if(servo_dutyratio[4]>0.123f){
-			servo_dutyratio[4]=0.123f;
-		}
-	if(servo_dutyratio[4]<0.027f){
-			servo_dutyratio[4]=0.027f;
-		}
-}
-
+}	
 
 
 void set_servo_4_follow_mode(int mode){
@@ -132,8 +160,7 @@ void set_servo_4_follow_mode(int mode){
 	PWM_SetDutyRatio(&pwm1[4],servo_dutyratio[4]);
 	last_dutyratio=servo_dutyratio[4];
 }
-
-
+/*this function is to make sure the servo.dutyratio 1-4 won't exceed [0.025,0.125]; */
 
 
 void servo_reset(){   //set all servo to the reset position
@@ -143,11 +170,12 @@ void servo_reset(){   //set all servo to the reset position
 		for(int i=1;i<=4;i++){
 			servo_dutyratio[i]=servo_dutyratio[i]*auto_servo_adjust_ratio+servo_reset_dutyratio[i]*(1-auto_servo_adjust_ratio);	
 			PWM_SetDutyRatio(&pwm1[i],servo_dutyratio[i]);
+			//through weighted average,let servo's duty cycle approach the target reset dutyratio
 		}
 		delay(auto_servo_delaytime);
 		for(int i=1;i<=4;i++){
 			if(servo_dutyratio[i]-servo_reset_dutyratio[i]>auto_servo_error_threshold || servo_dutyratio[i]-servo_reset_dutyratio[i]<-auto_servo_error_threshold){
-				reset_finished=0;
+				reset_finished=0;//only every interface of the servo satisfy the condition can avoid obtaining the bool 0
 				break;
 			}
 		}
@@ -157,9 +185,10 @@ void servo_reset(){   //set all servo to the reset position
 	}
 	for(int i=1;i<=4;i++){
 		PWM_SetDutyRatio(&pwm1[i],servo_reset_dutyratio[i]);
+		//directly set the dutyratio of the servo to the reset dutyratio since the gap is so tiny and safe enough
 	}
 }
-
+//this function is used to reset the servo in a mild way
 
 void servo_init(){   
   while(1){
@@ -168,11 +197,12 @@ void servo_init(){
 		for(int i=1;i<=4;i++){
 			servo_dutyratio[i]=servo_dutyratio[i]*auto_servo_adjust_ratio+servo_init_dutyratio[i]*(1-auto_servo_adjust_ratio);
 			PWM_SetDutyRatio(&pwm1[i],servo_dutyratio[i]);
+			//through weighted average,let servo's duty cycle approach the target init dutyratio
 		}
 		delay(auto_servo_delaytime);
 		for(int i=1;i<=4;i++){
 			if(servo_dutyratio[i]-servo_init_dutyratio[i]>auto_servo_error_threshold || servo_dutyratio[i]-servo_init_dutyratio[i]<-auto_servo_error_threshold){
-				init_finished=0;
+				init_finished=0;//only every interface of the servo satisfy the condition can avoid obtaining the bool 0
 				break;
 			}
 		}
@@ -182,12 +212,10 @@ void servo_init(){
 	}
 	for(int i=1;i<=4;i++){
 		PWM_SetDutyRatio(&pwm1[i],servo_init_dutyratio[i]);
+		//directly set the dutyratio of the servo to the initialize dutyratio since the gap is so tiny and safe enough
 	}
 }
-
-
-
-
+//this function is used to initialize the servo in a mild way
 
 
 void check_motor_dutyratio(){
@@ -204,12 +232,12 @@ void check_motor_dutyratio(){
 		motor.right_dutyratio=0;
 	}
 }
-
+//this function is to make sure the motor.dutyratio  won't exceed [0,1];
 
 
 void PWM_control_motor(int left_direction,float left_dutyratio,int right_direction,float right_dutyratio){
 	if(left_direction==forward){
-		check_motor_dutyratio();
+		check_motor_dutyratio();  //for protection
 		PWM_SetDutyRatio(&pwm2[1],left_dutyratio);
 	  PWM_SetDutyRatio(&pwm2[2],0);
 	}
@@ -229,18 +257,25 @@ void PWM_control_motor(int left_direction,float left_dutyratio,int right_directi
 	  PWM_SetDutyRatio(&pwm2[4],right_dutyratio);
 	}
 }
-
+//this function is to control the forward and reverse of the motor
 
 void motor_stop(){
 	for(int i=1;i<=4;i++){
 	  PWM_SetDutyRatio(&pwm2[i],0);
 	}
 }
-
+//this function is to stop the car
 
 void judge_adc_colour(){
+	int imdata[6] = {0,0,0,0,0,0};
+	for(int j=0;j<=5;j++){
+		for(int i=0;i<=5;i++){
+			imdata[i] = fmax(adc_data[i].data,imdata[i]);
+		}
+		delay(5);
+	}
 	for(int i=0;i<=5;i++){
-		if(adc_data[i].data<=colour_judge_threshold[i]){
+		if(imdata[i]<=colour_judge_threshold[i]){
 			adc_colour[i]=black;
 		}
 		else{
@@ -248,63 +283,29 @@ void judge_adc_colour(){
 		}
 	}
 }
-
+/*this function is to give the deinition value of white and black:
+	white---above colour_judge_threshold
+	black---0~colour_judge_threshold
+*/
 
 
 void follow_line(){
 	float adc_error[6];
-	adc_error[3]=adc_data[3].data-adc_data[3].last_data;//left adc
-	adc_error[5]=adc_data[5].data-adc_data[5].last_data;//right adc
+	adc_error[3]=adc_data[3].data-adc_data[3].last_data;//the error captured by left adc 
+	adc_error[5]=adc_data[5].data-adc_data[5].last_data;//the error captured by right adc
 	
 	motor.left_dutyratio=automode_motor_const_dutyratio+adc_error[3]*adc_error_ratio;
-	motor.right_dutyratio=automode_motor_const_dutyratio+adc_error[5]*adc_error_ratio;
+	motor.right_dutyratio=automode_motor_const_dutyratio+adc_error[5]*adc_error_ratio;//revise the dutyratio
 	
-	check_motor_dutyratio();
-	PWM_control_motor(forward,motor.left_dutyratio,forward,motor.right_dutyratio);
-	
-	
-	
+	check_motor_dutyratio();//make sure dutyratio not exceed the range
+	PWM_control_motor(forward,motor.left_dutyratio,forward,motor.right_dutyratio);//reassign the motor's dutyratio	
 }
+
 
 void reset_car_state(){
-	reach_stopline=0;  //000
+	reach_stopline=0;
 	leave_stopline=0;
 	reach_identifier=0;
-}
-
-
-
-
-void servo_reach_target(float target_1,float target_2,float target_3,int servo_4_mode){
-	
-	float target[4];
-	target[1]=target_1;
-	target[2]=target_2;
-	target[3]=target_3;
-	
-	while(1){
-		bool finished=1;
-		
-		for(int i=1;i<=3;i++){
-			servo_dutyratio[i]=servo_dutyratio[i]*auto_servo_adjust_ratio+target[i]*(1-auto_servo_adjust_ratio);
-			PWM_SetDutyRatio(&pwm1[i],servo_dutyratio[i]);
-		}
-		set_servo_4_follow_mode(servo_4_mode);
-		
-		delay(auto_servo_delaytime);
-		for(int i=1;i<=3;i++){
-			if(servo_dutyratio[i]-target[i]>auto_servo_error_threshold || servo_dutyratio[i]-target[i]<-auto_servo_error_threshold){
-				finished=0;
-				break;
-			}
-		}
-		if(finished){
-			break;
-		}
-	}
-	for(int i=1;i<=3;i++){
-		PWM_SetDutyRatio(&pwm1[i],target[i]);
-	}
 }
 
 
@@ -356,17 +357,13 @@ void auto_exchange_preparation(){
 }
 int identifier_cal(int colour[]){
 	int i_c = 0;
-	int c[3];
-	for (int i=0;i<10;i++){
-		c[0]=fmax(c[0],colour[0]);
-		c[1]=fmax(c[1],colour[1]);
-		c[2]=fmax(c[2],colour[2]);
-		delay(10);
-	}
-	i_c = c[0]*4+c[1]*2+c[2];
+	i_c = colour[0]*4+colour[1]*2+colour[2];
 	return i_c;
 }
 //Fanch's auto function finished *****
+
+
+//this function is to reset the three state of the car
 
 
 /* USER CODE END PFD */
@@ -396,6 +393,7 @@ void Example_task(void * arg) {
 			servo_init();
 			inited=1;
 			reseted=0;
+			//when the controll is online,we let the arm convert to init state 
 		}
 		if(!control.online && !reseted){
 			motor_stop();
@@ -411,11 +409,13 @@ void Example_task(void * arg) {
 				}
 			}
 		}
+		//when the controller is offline,we let the arm convert to reset state
 		
 		if(control.triSwitch[0]!=left_triswitch_up){
 			auto_function_finished=0;
 			reset_car_state();
 		}
+		//convert auto to other mode
 		
 		switch(control.triSwitch[0]){
 			case left_triswitch_up: 				//auto 
@@ -424,6 +424,7 @@ void Example_task(void * arg) {
 			  if(!auto_function_finished){
 					if(adc_colour[0]==black && adc_colour[1]==black && adc_colour[2]==black){
 					  reach_stopline =1;
+					  //when three adc all return black,it means the car reaches the stopline 
 				  }		
 				  if(!reach_stopline){
 					  follow_line();
@@ -431,6 +432,7 @@ void Example_task(void * arg) {
 				  if(reach_stopline){
 					  if(adc_colour[0]==white && adc_colour[1]==white && adc_colour[2]==white){
 						  leave_stopline=1;
+						//when three adc all return white,it means the car leaves the stopline 
 					  }
 					  if(!leave_stopline){
 						  follow_line();
@@ -438,12 +440,14 @@ void Example_task(void * arg) {
 					  if(leave_stopline){
 					  	if(adc_colour[0]==black || adc_colour[1]==black || adc_colour[2]==black){
 						  	reach_identifier=1;
+						  	//when some of adc return white,it means the car reaches the stopline
 					  	}
 					  	if(!reach_identifier){
 					  		follow_line();
 					  	}
 						  if(reach_identifier){
 							  motor_stop();
+								
 								//******
 								int case_identifier = identifier_cal(adc_colour);
 								int target_finished;
@@ -453,7 +457,7 @@ void Example_task(void * arg) {
 								switch(case_identifier){
 									//??
 									case(0):
-										delay(2000);
+										delay(1000);
 										break;
 									case(7):
 										break;
@@ -596,43 +600,41 @@ void Example_task(void * arg) {
 									servo_dutyratio[i] = servo.duty_ratio[i];
 								}
 								
+								
 							  auto_function_finished=1;
+							  // auto mode finished, convert to other mode 
 						  }
 					  }
 				  }
 				}
-			  
-				
-				
-				
 			break;
 			
-			case left_triswitch_middle:				//remote control
+			case left_triswitch_middle:			//remote control mode
 				switch(control.triSwitch[1]){
-					case right_triswitch_middle:    //move
+					case right_triswitch_middle:    //car movement
 						
-						if(control.channel[3]>0){
+						if(control.channel[3]>0){//forward or turning while going forward
 							motor.left_dutyratio=control.channel[3]*y_axis_ratio+control.channel[0]*x_axis_ratio;
 							motor.right_dutyratio=control.channel[3]*y_axis_ratio-control.channel[0]*x_axis_ratio;
 							PWM_control_motor(forward,motor.left_dutyratio,forward,motor.right_dutyratio);
 						}
-						else if(control.channel[3]<0){
+						else if(control.channel[3]<0){//backward or turning while going backward
 							motor.left_dutyratio=-control.channel[3]*y_axis_ratio-control.channel[0]*x_axis_ratio;
 							motor.right_dutyratio=-control.channel[3]*y_axis_ratio+control.channel[0]*x_axis_ratio;
 							PWM_control_motor(reverse,motor.left_dutyratio,reverse,motor.right_dutyratio);
 						}
-						else{
-							if(control.channel[0]>0){
+						else{   //controller.channel[3]=0
+							if(control.channel[0]>0){   //turning right at the same place
 								motor.left_dutyratio=control.channel[0];
 								motor.right_dutyratio=control.channel[0];
 								PWM_control_motor(forward,motor.left_dutyratio,reverse,motor.right_dutyratio);
 							}
-							else if(control.channel[0]<0){
+							else if(control.channel[0]<0){   //turning left at the same place
 								motor.left_dutyratio=-control.channel[0];
 								motor.right_dutyratio=-control.channel[0];
 								PWM_control_motor(reverse,motor.left_dutyratio,forward,motor.right_dutyratio);
 							}
-							else{
+							else{   //controller.channel[3]=0+controller.channel[0]=0
 								motor_stop();
 							}
 						}
@@ -641,9 +643,10 @@ void Example_task(void * arg) {
 					break;
 					
 					case right_triswitch_up://servo 4 horizontally
-						servo_dutyratio[1]=servo_dutyratio[1]+control.channel[3]*servo_remote_control_speed_ratio;
+						servo_dutyratio[1]=servo_dutyratio[1]-control.channel[3]*servo_remote_control_speed_ratio;
 					  servo_dutyratio[2]=servo_dutyratio[2]+control.channel[1]*servo_remote_control_speed_ratio;
 					  servo_dutyratio[3]=servo_dutyratio[3]-control.channel[2]*servo_remote_control_speed_ratio;
+					  //correspond the x/y axis value of controller with servo's dutyratio
 						check_servo_dutyratio();
 					  PWM_SetDutyRatio(&pwm1[1],servo_dutyratio[1]);
 					  PWM_SetDutyRatio(&pwm1[2],servo_dutyratio[2]);
@@ -652,7 +655,7 @@ void Example_task(void * arg) {
 					break;
 					
 					case right_triswitch_down:  //servo 4 vertically
-						servo_dutyratio[1]=servo_dutyratio[1]+control.channel[3]*servo_remote_control_speed_ratio;
+						servo_dutyratio[1]=servo_dutyratio[1]-control.channel[3]*servo_remote_control_speed_ratio;
 					  servo_dutyratio[2]=servo_dutyratio[2]+control.channel[1]*servo_remote_control_speed_ratio;
 					  servo_dutyratio[3]=servo_dutyratio[3]-control.channel[2]*servo_remote_control_speed_ratio;
 						check_servo_dutyratio();
@@ -664,25 +667,20 @@ void Example_task(void * arg) {
 				}
 			break;
 				
-			case left_triswitch_down:            //bump
+			case left_triswitch_down:            //air pump mode
 				switch(control.triSwitch[1]){
 					case right_triswitch_up:
-				    HAL_GPIO_WritePin(GPIOB,GPIO_PIN_8,GPIO_PIN_SET);
-					  break;
-					
+						power_on();
+						break;
 					case right_triswitch_middle:
-						HAL_GPIO_WritePin(GPIOB,GPIO_PIN_8,GPIO_PIN_RESET);
-					  break;
-					
+						Power_Init();
+						break;
 					case right_triswitch_down:
-						HAL_GPIO_WritePin(GPIOB,GPIO_PIN_8,GPIO_PIN_RESET);
-					  break;
-				}	
+						power_off();
+						break;
+				}
 			break;
 		}
-		
-		
-		
 		
 		//HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_8);
 		/* USER CODE END */
