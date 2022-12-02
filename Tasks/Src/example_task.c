@@ -48,7 +48,7 @@ bool  leave_stopline=0;
 bool  reach_identifier=0;
 bool  auto_function_finished=0;
 bool  init_finished=1;
-int   colour_judge_threshold[6]={2430,2300,2430,1500,0,1500};   //the dividing point between white and black
+int   colour_judge_threshold[6]={2600,2000,2500,1500,0,1500};   //the dividing point between white and black
 float sum=0;
 float last_dutyratio;
 float target;
@@ -91,8 +91,8 @@ case2:left_switch_middle---remote mode(be used for completing all tasks.If possi
 			subcase3:right_switch_down--arm corresponding to servo 1,2 and 3 and servo 4 vertically
 case3:left_switch_dowm---air pump mode
 			subcase1:right_switch_up---turn on the air pump
-			subcase2:right_switch_middle---initialize the air pump	
-			subcase3:right_switch_down---turn off the air pump
+			subcase2:right_switch_middle---turn off the air pump	
+			subcase3:right_switch_down---turn on the air pump
 4.some corresponding relationship:
 	pwm1[1]---servo 1
 	pwm1[2]---servo 2
@@ -117,7 +117,7 @@ void assign_servo_reset_and_init_dutyratio(){
 	servo_reset_dutyratio[1]=0.101f;
 	servo_reset_dutyratio[2]=0.052f;
 	servo_reset_dutyratio[3]=0.084f;
-	servo_reset_dutyratio[4]=0.065f;
+	servo_reset_dutyratio[4]=0.090f;
 	
 	servo_init_dutyratio[1]=0.067f;
 	servo_init_dutyratio[2]=0.054f;
@@ -146,7 +146,15 @@ void set_servo_4_follow_mode(int mode){
 	if(mode==S){
 		servo_dutyratio[4]=servo_init_dutyratio[4]+(servo_dutyratio[2]-servo_init_dutyratio[2]);
 	}
-	sum=sum+control.channel[0]*servo_remote_control_speed_ratio;
+	if((servo_dutyratio[4]+sum)<=0.125 && (servo_dutyratio[4]+sum)>=0.025){
+		sum=sum+control.channel[0]*servo_remote_control_speed_ratio;
+	}
+	else if(servo_dutyratio[4]+sum>0.125){
+		sum=sum-0.003;
+	}
+	else if(servo_dutyratio[4]+sum<0.025){
+		sum=sum+0.003;
+	}
 	servo_dutyratio[4]=servo_dutyratio[4]+sum;
 	check_servo_dutyratio();
 	target=servo_dutyratio[4];
@@ -267,12 +275,12 @@ void motor_stop(){
 //this function is to stop the car
 
 void judge_adc_colour(){
-	int imdata[6] = {0,0,0,0,0,0};
+	int imdata[6] = {10000,10000,10000,10000,10000,10000};
 	for(int j=0;j<=5;j++){
 		for(int i=0;i<=5;i++){
-			imdata[i] = fmax(adc_data[i].data,imdata[i]);
+			imdata[i] = fmin(adc_data[i].data,imdata[i]);
 		}
-		delay(5);
+		delay(10);
 	}
 	for(int i=0;i<=5;i++){
 		if(imdata[i]<=colour_judge_threshold[i]){
@@ -338,7 +346,7 @@ void auto_horizonally_exchange(){
 void auto_exchange_preparation(){
   int target_finished = 1;
 	servo.target_dutyratio[1] = 0.066;
-	servo.target_dutyratio[2] = 0.056;
+	servo.target_dutyratio[2] = 0.050;
 	servo.target_dutyratio[4] = 0.115;
 	while(target_finished == 1){
 		servo.duty_ratio[1]=servo.duty_ratio[1]*auto_servo_adjust_ratio+servo.target_dutyratio[1]*(1-auto_servo_adjust_ratio);
@@ -357,7 +365,7 @@ void auto_exchange_preparation(){
 }
 int identifier_cal(int colour[]){
 	int i_c = 0;
-	i_c = colour[0]*4+colour[1]*2+colour[2];
+	i_c = colour[0]*4+colour[1]*2+colour[2]*1;
 	return i_c;
 }
 //Fanch's auto function finished *****
@@ -495,7 +503,7 @@ void Example_task(void * arg) {
 										target_finished = 1;
 										servo.target_dutyratio[1] = 0.03;
 										servo.target_dutyratio[2] = 0.08;
-										servo.target_dutyratio[4] = 0.030;
+										servo.target_dutyratio[4] = 0.110;
 										while(target_finished == 1){
 											servo.duty_ratio[1]=servo.duty_ratio[1]*auto_servo_adjust_ratio+servo.target_dutyratio[1]*(1-auto_servo_adjust_ratio);
 											servo.duty_ratio[2]=servo.duty_ratio[2]*auto_servo_adjust_ratio+servo.target_dutyratio[2]*(1-auto_servo_adjust_ratio);
@@ -521,7 +529,7 @@ void Example_task(void * arg) {
 									case(3):  //No.3&4 center
 									case(4):
 										delay(1500);  //remotely adjust the holder  
-										PWM_SetDutyRatio(&pwm1[4],0.011);  //top SG pi/2+B 
+										PWM_SetDutyRatio(&pwm1[4],0.040);  //top SG pi/2+B 
 										PWM_SetDutyRatio(&pwm1[1],0.055);  //left MG ortha to ground ++ 
 										PWM_SetDutyRatio(&pwm1[2],0.035);  //right MG down about 30drg  
 										auto_step_forward(1500);
@@ -568,7 +576,7 @@ void Example_task(void * arg) {
 										//
 										target_finished=1;
 										servo.target_dutyratio[1] = 0.045;
-										servo.target_dutyratio[2] = 0.085;
+										servo.target_dutyratio[2] = 0.090;
 										servo.target_dutyratio[4] = 0.075;
 										while(target_finished == 1){
 											servo.duty_ratio[1]=servo.duty_ratio[1]*auto_servo_adjust_ratio+servo.target_dutyratio[1]*(1-auto_servo_adjust_ratio);
@@ -673,10 +681,10 @@ void Example_task(void * arg) {
 						power_on();
 						break;
 					case right_triswitch_middle:
-						Power_Init();
+						power_off();
 						break;
 					case right_triswitch_down:
-						power_off();
+						power_on();
 						break;
 				}
 			break;

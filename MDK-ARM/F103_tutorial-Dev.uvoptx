@@ -158,76 +158,44 @@
         <Ww>
           <count>0</count>
           <WinNumber>1</WinNumber>
-          <ItemText>adc_data,0x0A</ItemText>
+          <ItemText>adc_error</ItemText>
         </Ww>
         <Ww>
           <count>1</count>
           <WinNumber>1</WinNumber>
-          <ItemText>control,0x0A</ItemText>
+          <ItemText>adc_error</ItemText>
         </Ww>
         <Ww>
           <count>2</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>pwm1[1],0x0A</ItemText>
-        </Ww>
-        <Ww>
-          <count>3</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>pwm2[1],0x0A</ItemText>
-        </Ww>
-        <Ww>
-          <count>4</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>adc_data</ItemText>
-        </Ww>
-        <Ww>
-          <count>5</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>pwm1</ItemText>
-        </Ww>
-        <Ww>
-          <count>6</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>adc_error</ItemText>
-        </Ww>
-        <Ww>
-          <count>7</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>adc_error</ItemText>
-        </Ww>
-        <Ww>
-          <count>8</count>
           <WinNumber>1</WinNumber>
           <ItemText>adc_error[3]</ItemText>
         </Ww>
         <Ww>
-          <count>9</count>
+          <count>3</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>identifier_case</ItemText>
+        </Ww>
+        <Ww>
+          <count>4</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>case_identifier</ItemText>
+        </Ww>
+        <Ww>
+          <count>5</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>adc_colour,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>6</count>
           <WinNumber>1</WinNumber>
           <ItemText>adc_data,0x0A</ItemText>
         </Ww>
         <Ww>
-          <count>10</count>
+          <count>7</count>
           <WinNumber>1</WinNumber>
-          <ItemText>\\F103_tutorial_Dev\../Components/Src/bsp_adc.c\adc_data</ItemText>
+          <ItemText>imdata,0x0A</ItemText>
         </Ww>
       </WatchWindow1>
-      <WatchWindow2>
-        <Ww>
-          <count>0</count>
-          <WinNumber>2</WinNumber>
-          <ItemText>_lastRCPacketTime</ItemText>
-        </Ww>
-        <Ww>
-          <count>1</count>
-          <WinNumber>2</WinNumber>
-          <ItemText>pwm1</ItemText>
-        </Ww>
-        <Ww>
-          <count>2</count>
-          <WinNumber>2</WinNumber>
-          <ItemText>pwm2</ItemText>
-        </Ww>
-      </WatchWindow2>
       <Tracepoint>
         <THDelay>0</THDelay>
       </Tracepoint>
